@@ -14,7 +14,7 @@
     "url": "https://github.com/outergroup/rows2prose.git"
   },
   "scripts": {
-    "build": "rm -rf build && mkdir build && rollup -c -n rows2prose -o build/rows2prose.js -- ./index.js && mkdir -p ../rows2prose/package_data && cp build/rows2prose.js ../rows2prose/package_data/rows2prose.js && cp build/rows2prose.js.map ../rows2prose/package_data/rows2prose.js.map && cp node_modules/d3/dist/d3.min.js ../rows2prose/package_data/d3.min.js",
+    "to-python": "mkdir -p ../rows2prose/package_data && cp dist/rows2prose.browser.js ../rows2prose/package_data/rows2prose.browser.js && cp dist/rows2prose.browser.js.map ../rows2prose/package_data/rows2prose.browser.js.map && cp node_modules/d3/dist/d3.min.js ../rows2prose/package_data/d3.min.js",
     "watch": "watch 'npm run build' ./"
   },
   "devDependencies": {

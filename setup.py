@@ -6,7 +6,7 @@ setup(name="rows2prose",
       author="Marcus Lewis",
       url="https://outergroup.dev/",
       packages=find_packages(),
-      package_data={'vexpr': ['rows2prose/package_data/*',]},
+      package_data={'rows2prose': ['rows2prose/package_data/*',]},
       include_package_data=True,
       zip_safe=False,
 )

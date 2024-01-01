@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 import uuid
 from pkg_resources import resource_string
@@ -5,10 +7,10 @@ from pkg_resources import resource_string
 
 def header_content():
     r2p_js = resource_string(
-        'rows2prose', os.path.join('package_data', 'rows2prose.js')
+        'rows2prose', os.path.join('package_data', 'rows2prose.browser.js')
     ).decode('utf-8')
     d3_js = resource_string(
-        'rose2prose', os.path.join('package_data', 'd3.min.js')
+        'rows2prose', os.path.join('package_data', 'd3.min.js')
     ).decode('utf-8')
 
     return f"""
@@ -18,8 +20,8 @@ div.r2p-output svg {{
 }}
 </style>
 <script>
-  const r2p_undef_define = ("function"==typeof define);
-  let r2p_prev_define = undefined;
+  var r2p_undef_define = ("function"==typeof define),
+      r2p_prev_define = undefined;
   if (r2p_undef_define) {{
     r2p_prev_define = define;
     define = undefined;
@@ -33,296 +35,340 @@ div.r2p-output svg {{
 
 
 
-def time_control(class_name, labels=None):
-    labels_str = (f" labels: {repr(labels)},"
-                  if labels is not None
-                  else "")
-    if labels is None:
-        labels = ["Start", "End"]
-
+def time_control(class_name):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0],
-              component = r2p.timeControl()
-                .onupdate(timestep => {{
-                  d3.select(container).select(".timeState").node()._r2pState.selectTimestep(
-                    timestep
-                  );
-                }});
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0],
+          component = r2p.timeControl()
+          .onupdate(iTimestep => {{
+            d3.select(container).select(".timeState").node()._r2pState.selectTimestep(
+              iTimestep
+            );
+          }});
 
-        renderTimeFunctions.push(function(min, max, curr) {{
-          d3.select(element).datum({{min: min, max: max, curr: curr,{labels_str}}}).call(component);
-        }});
-      }})();
+    renderTimeFunctions.push(function(sortedUniqueTimesteps, index) {{
+      d3.select(element).datum({{sortedUniqueTimesteps, index}}).call(component);
+    }});
+  }})();
     """
 
 
-def position_view(class_name, key):
-    return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0],
-              component = r2p.positionView()
-              .scale(d3.scaleLinear().domain([-1.3, 0.3]).range([0, 400]));
 
-        renderTimestepFunctions.push(function (model) {{
-          d3.select(element).datum(model["{key}"]).call(component);
-        }});
-      }})();
+def snapshot_position_view(class_name, key):
+    return f"""
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
+
+    onTableLoadedFunctions.push(() => {{
+      d3.select(element)
+        .datum(table["{key}"][0])
+        .call(r2p.positionView()
+          .scale(d3.scaleLinear().domain([-1, 1]).range([0, 232])));
+    }});
+  }})();
     """
 
 
-def position_distribution_view(class_name, key):
+def timeline_position_view(class_name, key):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0];
-        renderTimestepFunctions.push(function (model) {{
-          const points = model["{key}"];
-          let min = d3.min(points),
-              max = d3.max(points);
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
 
-          if (min == max) {{
+    let component;
+    onTableLoadedFunctions.push(() => {{
+      const [globalMin, globalMax] = d3.extent(table["{key}"]),
+             min = globalMin;
+             // Need a valid scale, so these need to be different.
+             max = (globalMin != globalMax)
+               ? globalMax
+               : globalMax + 1;  // Visualize each point as a low value.
+      component = r2p.positionView()
+        .scale(d3.scaleLinear().domain([min, max]).range([0, 232]));
+    }});
+
+    renderRowsFunctions.push(function (iRows) {{
+      d3.select(element)
+        .datum(table["{key}"][iRows[0]])
+        .call(component);
+    }});
+  }})();
+    """
+
+
+def timeline_position_distribution_view(class_name, key):
+    return f"""
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
+
+    let component;
+    onTableLoadedFunctions.push(() => {{
+      const [globalMin, globalMax] = d3.extent(table["{key}"]),
+            min = globalMin,
             // Need a valid scale, so these need to be different.
-            // Visualize each point as a low value.
-            max += 1;
-          }}
+            max = (globalMin != globalMax)
+            ? globalMax
+            : globalMax + 1;  // Visualize each point as a low value.
 
-          const component = r2p.scalarDistributionView()
-              .scale(d3.scaleLinear().domain([min, max]).range([0, 232]))
-              .height(12)
-              .fontSize(13)
-              .useDataMin(true)
-              .useDataMax(true);
+      component = r2p.scalarDistributionView()
+        .scale(d3.scaleLinear().domain([min, max]).range([0, 232]))
+        .height(12)
+        .fontSize(13);
+    }});
 
-          d3.select(element).datum(points).call(component);
-        }});
-      }})();
+    renderRowsFunctions.push(function (iRows) {{
+      d3.select(element)
+        .datum(extractRows(table["{key}"], iRows))
+        .call(component);
+    }});
+  }})();
     """
 
 
-def position_distribution_list_view(class_name, key):
+def snapshot_position_distribution_list_view(class_name, key):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0];
-        renderTimestepFunctions.push(function (model) {{
-            const pointsLists = model["{key}"],
-                  min = d3.min(pointsLists, points => d3.min(points)),
-                  max = d3.max(pointsLists, points => d3.max(points)),
-              component = r2p.scalarDistributionListView()
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
+
+    onTableLoadedFunctions.push(() => {{
+      const mean = table["{key}"];
+      let [min, max] = d3.extent(mean);
+      if (min == max) {{
+        // Need a valid scale, so these need to be different.
+        // Visualize each point as a low value.
+        max += 1;
+      }}
+
+      d3.select(element)
+        .datum({{values: mean, iConfigs: iConfig, nConfigs, min, max}})
+        .call(r2p.scalarDistributionListView()
               .scale(d3.scaleLinear().domain([min, max]).range([0, 232]))
               .useDataMin(true)
               .useDataMax(true)
               .height(12)
-              .fontSize(13);
-          d3.select(element).datum({{pointsLists, min, max}}).call(component);
-        }});
-      }})();
+              .fontSize(13));
+    }});
+  }})();
     """
 
 
-def expression_view(class_name, keys, text):
+def snapshot_expression_view(class_name, keys, text):
     return f"""
-      (function() {{
-        const kernelExpr = `{text}`,
-              element = container.querySelectorAll(".{class_name}")[0],
-              kernelKeys = {repr(keys)},
-              component = r2p.expressionView(kernelExpr, kernelKeys);
+  (function() {{
+    const kernelExpr = `{text}`,
+          kernelKeys = {repr(keys)},
+          element = container.querySelectorAll(".{class_name}")[0],
+          component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalar");
 
-        renderTimestepFunctions.push(function (model) {{
-          d3.select(element).datum(model).call(component);
-        }});
-      }})();
+    onTableLoadedFunctions.push(() => {{
+      const model = Object.fromEntries(
+        kernelKeys.map(k => [k, table[k][0]])
+      );
+      d3.select(element).datum(model).call(component);
+    }});
+  }})();
     """
 
 
-def expression_distribution_view(class_name, keys, text):
+def timeline_expression_view(class_name, keys, text):
     return f"""
-      (function() {{
-        const kernelExpr = `{text}`,
-              element = container.querySelectorAll(".{class_name}")[0],
-              kernelKeys = {repr(keys)},
-              component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalarDistribution");
+  (function() {{
+    const kernelExpr = `{text}`,
+          kernelKeys = {repr(keys)},
+          element = container.querySelectorAll(".{class_name}")[0],
+          component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalar");
 
-        renderTimestepFunctions.push(function (model) {{
-          d3.select(element).datum(model).call(component);
-        }});
-      }})();
+    renderRowsFunctions.push(function (iRows) {{
+      const model = Object.fromEntries(
+        kernelKeys.map(k => [k, table[k][iRows[0]]])
+      );
+
+      d3.select(element).datum(model).call(component);
+    }});
+  }})();
     """
 
 
-def expression_distribution_list_view(class_name, keys, text):
+def timeline_expression_distribution_view(class_name, keys, text):
     return f"""
-      (function() {{
-        const kernelExpr = `{text}`,
-              element = container.querySelectorAll(".{class_name}")[0],
-              kernelKeys = {repr(keys)},
-              component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalarDistributionList");
+  (function() {{
+    const kernelExpr = `{text}`,
+          kernelKeys = {repr(keys)},
+          element = container.querySelectorAll(".{class_name}")[0],
+          component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalarDistribution");
 
-        renderTimestepFunctions.push(function (model) {{
-          d3.select(element).datum(model).call(component);
-        }});
-      }})();
+    renderRowsFunctions.push(function (iRows) {{
+      const model = Object.fromEntries(
+        kernelKeys.map(k => [k, extractRows(table[k], iRows)])
+      );
+
+      d3.select(element).datum(model).call(component);
+    }});
+  }})();
     """
 
 
-def scalar_view(class_name, key):
+def snapshot_expression_distribution_list_view(class_name, keys, text):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0],
-              component = r2p.scalarView()
-              .scale(d3.scaleLog().domain([1e-7, 5e0]).range([0, 400]))
-              .eps(1e-7)
-              .exponentFormat(true)
-              .padRight(55)
-              .height(12)
-              .fontSize(13)
-              .tfrac(2.7/3);
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0],
+          kernelExpr = `{text}`,
+          kernelKeys = {repr(keys)},
+          component = r2p.expressionView(kernelExpr, kernelKeys)
+            .valueType("scalarDistributionList")
 
-        renderTimestepFunctions.push(function (model) {{
-          d3.select(element).datum(model["{key}"]).call(component);
-        }});
-      }})();
+    onTableLoadedFunctions.push(() => {{
+      d3.select(element)
+        .datum(Object.fromEntries(
+          kernelKeys.map(k => {{
+            const param = table[k],
+                  [min, max] = d3.extent(param);
+            return [k, {{values: param, iConfigs: iConfig, nConfigs, min, max}}];
+          }})
+        ))
+        .call(component);
+    }});
+   }})();
     """
 
 
-def scalar_distribution_view(class_name, key):
+def snapshot_scalar_view(class_name, key):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0];
-        renderTimestepFunctions.push(function (model) {{
-          const points = model["{key}"];
-          let min = d3.min(points),
-              max = d3.max(points);
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
 
-          if (min == max) {{
+    onTableLoadedFunctions.push(() => {{
+      d3.select(element)
+        .datum(table["{key}"][0])
+        .call(r2p.scalarView()
+          .scale(d3.scaleLog().domain([1e-7, 2.0]).range([0, 215]))
+          .eps(1e-7)
+          .exponentFormat(true)
+          .padRight(55)
+          .height(12)
+          .fontSize(13)
+          .tfrac(2.7/3));
+    }})
+  }})();
+    """
+
+
+def timeline_scalar_view(class_name, key):
+    return f"""
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
+
+    let component;
+    onTableLoadedFunctions.push(() => {{
+      const [globalMin, globalMax] = d3.extent(table["{key}"]),
+            min = globalMin,
             // Need a valid scale, so these need to be different.
-            // Visualize each point as a low value.
-            max *= 10;
-          }}
+            max = (globalMin != globalMax)
+            ? globalMax
+            : globalMax * 10;  // Visualize each point as a low value.
+      component = r2p.scalarView()
+          .scale(d3.scaleLog().domain([min, max]).range([0, 215]))
+          .eps(1e-7)
+          .exponentFormat(true)
+          .padRight(55)
+          .height(12)
+          .fontSize(13)
+          .tfrac(2.7/3);
+    }})
 
-          const component = r2p.scalarDistributionView()
-              .scale(d3.scaleLog().domain([min, max]).range([0, 215]))
-              .exponentFormat(true)
-              .height(12)
-              .fontSize(13);
-
-          d3.select(element).datum(points).call(component);
-        }});
-      }})();
+    renderRowsFunctions.push(function (iRows) {{
+      d3.select(element)
+        .datum(table["{key}"][iRows[0]])
+        .call(component);
+    }});
+  }})();
     """
 
 
-def scalar_distribution_list_view(class_name, key):
+def timeline_scalar_distribution_view(class_name, key):
     return f"""
-      (function() {{
-        const element = container.querySelectorAll(".{class_name}")[0];
-        renderTimestepFunctions.push(function(model) {{
-          const pointsLists = model["{key}"];
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
 
-          let min = d3.min(pointsLists, points => d3.min(points)),
-              max = d3.max(pointsLists, points => d3.max(points));
+    let component;
+    onTableLoadedFunctions.push(() => {{
+      const [globalMin, globalMax] = d3.extent(table["{key}"]),
+            min = globalMin,
+            // Need a valid scale, so these need to be different.
+            max = (globalMin != globalMax)
+            ? globalMax
+            : globalMax * 10;  // Visualize each point as a low value.
+      component = r2p.scalarDistributionView()
+        .scale(d3.scaleLog().domain([min, max]).range([0, 215]))
+        .exponentFormat(true)
+        .height(12)
+        .fontSize(13);
+    }});
 
-         if (min == max) {{
-           // Need a valid scale, so these need to be different.
-           // Visualize each point as a low value.
-           max *= 10;
-         }}
-
-         const component = r2p.scalarDistributionListView()
-              .scale(d3.scaleLog().domain([min, max]).range([0, 215]))
-              .useDataMin(true)
-              .useDataMax(true)
-              .exponentFormat(true)
-              .height(12)
-              .fontSize(13);
-
-          d3.select(element).datum({{pointsLists, min, max}}).call(component);
-        }});
-      }})();
+    renderRowsFunctions.push(function (iRows) {{
+      d3.select(element)
+        .datum(extractRows(table["{key}"], iRows))
+        .call(component);
+    }});
+  }})();
     """
 
 
-def scalar_timesteps_js(headers):
+def snapshot_scalar_distribution_list_view(class_name, key):
     return f"""
-      const headers = {repr(headers)};
-      const timesteps = encodedData
-       .replace(/\\n$/, '') // strip any newline at the end of the string
-       .split('\\n')
-       .map(
-          row => new Float32Array(Uint8Array.from(atob(row), c => c.charCodeAt(0)).buffer)
-        ).map(
-          row => Object.fromEntries(
-            headers.map((header, i) => [header, row[i]])
-        ));
-    """
+  (function() {{
+    const element = container.querySelectorAll(".{class_name}")[0];
 
-
-def scalar_snapshot_js(headers):
-    return f"""
-      {scalar_timesteps_js(headers)}
-      if (timesteps.length != 1) {{
-        throw "Expected single line";
+    onTableLoadedFunctions.push(() => {{
+      const values = table["{key}"];
+      let [min, max] = d3.extent(values);
+      if (min == max) {{
+        // Need a valid scale, so these need to be different.
+        // Visualize each point as a low value.
+        max *= 10;
       }}
-      const snapshot = timesteps[0];
+
+      d3.select(element)
+        .datum({{values, iConfigs: iConfig, nConfigs, min, max}})
+        .call(r2p.scalarDistributionListView()
+          .scale(d3.scaleLog().domain([min, max]).range([0, 215]))
+          .useDataMin(true)
+          .useDataMax(true)
+          .exponentFormat(true)
+          .height(12)
+          .fontSize(13));
+    }});
+  }})();
     """
 
 
-def scalar_distribution_timesteps_js(headers, num_values_per_param):
-    return f"""
-      const numValuesPerParam = {num_values_per_param};
-      const headers = {repr(headers)};
-      const timesteps = encodedData
-       .replace(/\\n$/, '') // strip any newline at the end of the string
-       .split('\\n')
-       .map(
-         row => new Float32Array(Uint8Array.from(atob(row), c => c.charCodeAt(0)).buffer))
-       .map(
-           row => {{
-             // Split row into numValuesPerParam chunks
-              const chunks = [];
-              for (let i = 0; i < row.length; i += numValuesPerParam) {{
-                chunks.push(row.slice(i, i + numValuesPerParam));
-              }}
-
-             return Object.fromEntries(
-               headers.map((header, i) => [header, chunks[i]]));
-          }});
+def df_to_dict(df):
     """
-
-
-def scalar_distribution_list_snapshot_js(headers, num_values_per_param):
-    return f"""
-      const numValuesPerParam = {repr(num_values_per_param)};
-      const headers = {repr(headers)};
-      const snapshot = Object.fromEntries(
-        headers.map((header, i) => [header, []]));
-      const models = encodedData
-       .replace(/\\n$/, '') // strip any newline at the end of the string
-       .split('\\n')
-       .map(
-         row => new Float32Array(Uint8Array.from(atob(row), c => c.charCodeAt(0)).buffer))
-       .forEach(
-           (row, iRow) => {{
-             // Split row into numValuesPerParam chunks
-              let iCol = 0;
-              for (let i = 0; i < row.length; i += numValuesPerParam[iRow]) {{
-                snapshot[headers[iCol]].push(row.slice(i, i + numValuesPerParam[iRow]));
-                iCol++;
-              }}
-          }});
+    Returns {"columnName1": {"type": "float32", "data": "BASE64ENCODED_DATA1"},
+             "columnName2": {"type": "float32", "data": "BASE64ENCODED_DATA2"},
+             ...}
+    using the column's type to determine "type".
     """
+    return {
+        col: {
+            "type": str(df[col].dtype),
+            "data": base64.b64encode(df[col].values).decode("utf-8")
+        }
+        for col in df.columns
+    }
 
 
-def scalar_distribution_snapshot_js(headers, num_values_per_param):
-    return f"""
-      {scalar_distribution_timesteps_js(headers, num_values_per_param)}
-      if (timesteps.length != 1) {{
-        throw "Expected single line";
-      }}
-      const snapshot = timesteps[0];
+
+def df_to_custom_json(df):
     """
+    Returns {"columnName1": {"type": "float32", "data": "BASE64ENCODED_DATA1"},
+             "columnName2": {"type": "float32", "data": "BASE64ENCODED_DATA2"},
+             ...}
+    using the column's type to determine "type".
+    """
+    return json.dumps(df_to_dict(df))
 
 
-def visualize_timeline_html(html_preamble, encoded_to_timesteps, components, encoded_data):
+def visualize_timeline_html(html_preamble, components, df):
     element_id = str(uuid.uuid1())
     components_str = "\n".join(components)
 
@@ -330,29 +376,51 @@ def visualize_timeline_html(html_preamble, encoded_to_timesteps, components, enc
 {html_preamble(element_id)}
 <script>
 (function() {{
-  let renderTimestepFunctions = [],
-      renderTimeFunctions = [],
-      timeStateComponent = r2p.hiddenTimeState()
-      .renderTimestep(model => {{
-        renderTimestepFunctions.forEach(render => render(model))
-      }})
-      .renderTime((min, max, curr) => {{
-        renderTimeFunctions.forEach(render => render(min, max, curr))
-      }});
+  function extractRows(arr, iRows) {{
+    let selected = arr.slice(0, iRows.length);
+    iRows.forEach((iRow, i) => {{
+      selected[i] = arr[iRow];
+    }});
+    return selected;
+  }}
 
-  const container = document.getElementById("{element_id}");
+  let renderRowsFunctions = [],
+      renderTimeFunctions = [],
+      onTableLoadedFunctions = [];
+
+  let table, sortedUniqueTimesteps;
+
+  const container = document.getElementById("{element_id}"),
+        timeStateComponent = r2p.hiddenTimeState()
+        .renderTimestep(t => {{
+          const iTimestep = table["i_timestep"];
+
+          let iRows = [];
+          for (let i = 0; i < iTimestep.length; i++) {{
+            if (iTimestep[i] == t) {{
+              iRows.push(i);
+            }}
+          }}
+
+          renderRowsFunctions.forEach(render => render(iRows));
+        }})
+        .renderTime((sortedUniqueTimesteps, index) => {{
+          renderTimeFunctions.forEach(render => render(sortedUniqueTimesteps, index));
+        }});
 
   {components_str}
 
-  const encodedData = `{encoded_data}`;
-  {encoded_to_timesteps}
+  table = r2p.parseColumns({df_to_custom_json(df)});
+  sortedUniqueTimesteps = table["i_timestep"]
+    .sort(d3.ascending).filter((d, i, a) => !i || d != a[i - 1]);
+  onTableLoadedFunctions.forEach(onloaded => onloaded());
 
-  d3.select(container).datum(timesteps).call(timeStateComponent);
+  d3.select(container).datum(sortedUniqueTimesteps).call(timeStateComponent);
 }})();
 </script>"""
 
 
-def visualize_snapshot_html(html_preamble, encoded_to_snapshot, components, encoded_data):
+def visualize_snapshot_distribution_lists_html(html_preamble, components, df):
     element_id = str(uuid.uuid1())
     components_str = "\n".join(components)
 
@@ -360,15 +428,19 @@ def visualize_snapshot_html(html_preamble, encoded_to_snapshot, components, enco
 {html_preamble(element_id)}
 <script>
 (function() {{
-  let renderTimestepFunctions = [];
 
   const container = document.getElementById("{element_id}");
 
+  let onTableLoadedFunctions = [];
+
+  let table, iConfig, nConfigs;
+
   {components_str}
 
-  const encodedData = `{encoded_data}`;
-  {encoded_to_snapshot}
-  renderTimestepFunctions.forEach(render => render(snapshot));
+  table = r2p.parseColumns({df_to_custom_json(df)});
+  iConfig = table["i_config"],
+  nConfigs = d3.max(iConfig) + 1;
+  onTableLoadedFunctions.forEach(onloaded => onloaded());
 }})();
 </script>"""
 

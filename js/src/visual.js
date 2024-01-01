@@ -2,7 +2,7 @@ import * as d3 from "d3";
 import { play_button_svg, pause_button_svg, restart_button_svg } from "./buttons";
 
 
-const anim_t = 200;
+const anim_t = 100;
 
 function hiddenTimeState() {
   let renderTimestep,
@@ -25,31 +25,37 @@ function hiddenTimeState() {
         return timeState;
       })
       .call(timeState => {
-        timeState.each(timesteps => {
-          let selectedTimestep = timeState.node()._r2pState.userSelectedTimestep;
+        timeState.each(sortedUniqueTimesteps => {
+          let selectedTimestep = timeState.node()._r2pState.userSelectedTimestep,
+              selectedIndex;
           if (selectedTimestep == null) {
-            selectedTimestep = timesteps.length;
-            renderTimestep(timesteps[selectedTimestep - 1]);
+            selectedIndex = sortedUniqueTimesteps.length - 1;
+            selectedTimestep = sortedUniqueTimesteps[selectedIndex];
+            renderTimestep(selectedTimestep);
+          } else {
+            selectedIndex = sortedUniqueTimesteps.indexOf(selectedTimestep);
           }
-          renderTime(1, timesteps.length, selectedTimestep);
+          renderTime(sortedUniqueTimesteps, selectedIndex);
 
-          timeState.node()._r2pState.selectTimestep = function(timestep) {
+          timeState.node()._r2pState.selectTimestep = function(iTimestep) {
             let state = timeState.node()._r2pState;
 
-            const tDiscrete = Math.floor(timestep);
-            if (tDiscrete == timesteps.length) {
+            const iDiscrete = Math.floor(iTimestep);
+
+            const tTimestep = sortedUniqueTimesteps[iDiscrete];
+            if (iDiscrete == sortedUniqueTimesteps.length - 1) {
               state.userSelectedTimestep = null;
             } else {
-              state.userSelectedTimestep = tDiscrete;
+              state.userSelectedTimestep = tTimestep;
             }
 
-            if (tDiscrete != state.renderedTimestep) {
-              renderTimestep(timesteps[tDiscrete - 1]);
-              state.renderedTimestep = tDiscrete;
+            if (tTimestep != state.renderedTimestep) {
+              renderTimestep(tTimestep);
+              state.renderedTimestep = tTimestep;
             }
 
-            renderTime(1, timesteps.length, timestep);
-          }
+            renderTime(sortedUniqueTimesteps, iTimestep);
+          };
         });
       });
   }
@@ -401,21 +407,21 @@ function scalarDistributionListView() {
 
   function render(selection) {
     const fmin = useDataMin
-          ? pointsListsData => pointsListsData.min
-          : pointsListsData => scale.domain()[0],
+          ? d => d.min
+          : _ => scale.domain()[0],
           fmax = useDataMax
-          ? pointsListsData => pointsListsData.max
-          : pointsListsData => scale.domain()[1],
-          fxmax = pointsListsData => scale(fmax(pointsListsData)),
-          fxmin = pointsListsData => scale(fmin(pointsListsData)),
-          fwidth = pointsListsData => fxmax(pointsListsData) - fxmin(pointsListsData),
-          fheight = pointsListsData => pointsListsData.pointsLists.length * rowHeight,
-          fmintext = pointsListsData => exponentFormat
-          ? fmin(pointsListsData).toExponential(1)
-          : toPrecisionThrifty(fmin(pointsListsData), 2),
-          fmaxtext = pointsListsData => exponentFormat
-          ? fmax(pointsListsData).toExponential(1)
-          : toPrecisionThrifty(fmax(pointsListsData), 2);
+          ? d => d.max
+          : _ => scale.domain()[1],
+          fxmax = d => scale(fmax(d)),
+          fxmin = d => scale(fmin(d)),
+          fwidth = d => fxmax(d) - fxmin(d),
+          fheight = d => d.nConfigs * rowHeight,
+          fmintext = d => exponentFormat
+          ? fmin(d).toExponential(1)
+          : toPrecisionThrifty(fmin(d), 2),
+          fmaxtext = d => exponentFormat
+          ? fmax(d).toExponential(1)
+          : toPrecisionThrifty(fmax(d), 2);
 
     selection.selectAll(".visualizationContainer")
       .data(d => [d])
@@ -435,7 +441,7 @@ function scalarDistributionListView() {
                 .style("font-size", fontSize)
                 .style("color", "gray")
                 .style("position", "relative")
-                .style("top", d => `-${d.pointsLists.length * rowHeight / 2 - 5}px`)
+                .style("top", d => `-${d.nConfigs * rowHeight / 2 - 5}px`)
                 .text(fmintext);
 
               div.append("canvas")
@@ -447,13 +453,12 @@ function scalarDistributionListView() {
                 .style("font-size", fontSize)
                 .style("color", "gray")
                 .style("position", "relative")
-                .style("top", pointsListsData =>
-                  `-${pointsListsData.pointsLists.length * rowHeight / 2 - 5}px`)
+                .style("top", d => `-${d.nConfigs * rowHeight / 2 - 5}px`)
                 .style("left", "8px")
                 .text(fmaxtext);
             }))
       .call(div => {
-        div.style("height", pointsListsData => `${fheight(pointsListsData)}px`);
+        div.style("height", d => `${fheight(d)}px`);
 
         if (useDataMin) {
           div.select(".min-text")
@@ -471,43 +476,42 @@ function scalarDistributionListView() {
           .style("width", d => `${fwidth(d) + 2}px`)
           .style("height", d => `${fheight(d)}px`);
 
-        canvas.each(function(pointsListsData) {
+        canvas.each(function(d) {
           let ctx = this.getContext("2d");
 
           const cnv_x = d3.scaleLinear()
-            .domain(scale.domain())
-            .range([cnvMult * (1 + scale.range()[0]), cnvMult * (scale.range()[1] + 1)]),
+                .domain(scale.domain())
+                .range([cnvMult * (1 + scale.range()[0]), cnvMult * (scale.range()[1] + 1)]),
                 cnv_y = d3.scaleLinear()
-            .domain([0, pointsListsData.pointsLists.length - 1])
-            .range([cnvMult * 0.5, cnvMult * rowHeight * (pointsListsData.pointsLists.length + 0.5)]);
+                .domain([0, d.nConfigs - 1])
+                .range([cnvMult * 0.5, cnvMult * rowHeight * (d.nConfigs + 0.5)]);
 
           // draw silver rect
           ctx.fillStyle = "silver";
-          ctx.fillRect(0, 0, cnvMult * fwidth(pointsListsData), cnvMult * fheight(pointsListsData));
+          ctx.fillRect(0, 0, cnvMult * fwidth(d), cnvMult * fheight(d));
 
           ctx.strokeStyle = "gray";
           ctx.lineWidth = 2 * cnvMult;
 
           ctx.beginPath();
-          ctx.moveTo(cnv_x(fmin(pointsListsData)), cnv_y(0));
-          ctx.lineTo(cnv_x(fmin(pointsListsData)), cnv_y(pointsListsData.pointsLists.length - 1));
+          ctx.moveTo(cnv_x(fmin(d)), cnv_y(0));
+          ctx.lineTo(cnv_x(fmin(d)), cnv_y(d.nConfigs - 1));
           ctx.stroke();
 
           ctx.beginPath();
-          ctx.moveTo(cnv_x(fmax(pointsListsData)), cnv_y(0));
-          ctx.lineTo(cnv_x(fmax(pointsListsData)), cnv_y(pointsListsData.pointsLists.length - 1));
+          ctx.moveTo(cnv_x(fmax(d)), cnv_y(0));
+          ctx.lineTo(cnv_x(fmax(d)), cnv_y(d.nConfigs - 1));
           ctx.stroke();
 
           ctx.fillStyle = "blue";
           ctx.globalAlpha = 0.4;
 
-          pointsListsData.pointsLists.forEach((points, i) => {
-            points.forEach(point => {
-              ctx.beginPath();
-              ctx.arc(cnv_x(point), cnv_y(i), pointRadius*cnvMult, 0, 2 * Math.PI);
-              ctx.fill();
-            });
-          });
+          for (let i = 0; i < d.values.length; i++) {
+            ctx.beginPath();
+            ctx.arc(cnv_x(d.values[i]), cnv_y(d.iConfigs[i]),
+                    pointRadius*cnvMult, 0, 2 * Math.PI);
+            ctx.fill();
+          }
         });
       });
   }
@@ -707,20 +711,19 @@ function timeControl() {
           .select(".slider_container");
 
     slider_container.select(".slider")
-      .property("value", d => d.curr);
+      .property("value", d => d.index);
     slider_container.select(".slider_text")
       .style("left", d => {
         const pctScale = d3.scaleLinear()
-        .domain([d.min, d.max])
-        .range([0, 100]),
+              .domain([0, d.sortedUniqueTimesteps.length - 1])
+              .range([0, 100]),
               pxScale = d3.scaleLinear()
-        .domain([d.min, d.max])
-        .range([-30, -45]);
-        return `calc(${pctScale(d.curr)}% + ${pxScale(d.curr)}px)`;
+              .domain([0, d.sortedUniqueTimesteps.length - 1])
+              .range([-30, -45]);
+        return `calc(${pctScale(d.index)}% + ${pxScale(d.index)}px)`;
       })
       .text(d => {
-        const step = Math.floor(d.curr),
-              stepLabel = d.labels !== undefined ? d.labels[step - d.min] : step;
+        const stepLabel = d.sortedUniqueTimesteps[Math.floor(d.index)];
         return `Step ${stepLabel}`;
       });
   }
@@ -832,7 +835,7 @@ function timeControl() {
                       }
   
                       let d = selection.datum();
-                      d.curr = value;
+                      d.index = value;
                       renderValue(selection.datum(d))
                       slider_.node()._vp_onupdate(value);
                     }
@@ -889,7 +892,7 @@ function timeControl() {
                   slider_.node()._vp_onupdate(v);
 
                   let d = selection.datum();
-                  d.curr = v;
+                  d.index = v;
                   renderValue(selection.datum(d))
                 })
                 .on("pointerdown", () => {
@@ -909,8 +912,8 @@ function timeControl() {
                 slider_ = slider_container.select(".slider");
 
           slider_
-            .attr("min", d => d.min)
-            .attr("max", d => d.max);
+            .attr("min", d => 0)
+            .attr("max", d => d.sortedUniqueTimesteps.length - 1);
 
           slider_.node()._vp_onupdate = onupdate;
           renderValue(selection);
@@ -1038,18 +1041,11 @@ function expressionView(expr, keys) {
               .call(mixingWeightComponent);
           });
       } else if (valueType == "scalarDistributionList") {
-
         let scaleValue = expression.selectAll("span.scale-value"),
             scaleKeys = scaleValue.nodes().map(n => n.getAttribute("data-key")),
-            allPointsLists = scaleKeys.map(k => model[k]),
-            mins = allPointsLists.map(pointsLists => d3.min(pointsLists, points => d3.min(points))),
-            maxs = allPointsLists.map(pointsLists => d3.max(pointsLists, points => d3.max(points))),
-            globalMin = d3.min(mins),
-            globalMax = d3.max(maxs),
-            data = allPointsLists.map((pointsLists, i) => {
-              return {min: mins[i], max: maxs[i],
-                      pointsLists};
-            });
+            data = scaleKeys.map(k => model[k]),
+            globalMin = d3.min(data.map(d => d.min)),
+            globalMax = d3.max(data.map(d => d.max));
 
         let scaleComponent = scalarDistributionListView()
           .scale(d3.scaleLinear().domain([0, globalMax]).range([0, 200]))
@@ -1074,6 +1070,7 @@ function expressionView(expr, keys) {
             });
         } else {
           scaleValue.data(data).call(scaleComponent);
+          onfinished();
         }
 
         let mixingWeightComponent = scalarDistributionListView()
@@ -1083,8 +1080,7 @@ function expressionView(expr, keys) {
 
         let mixingWeightValue = expression.selectAll("span.mixing-weight-value"),
             mixingWeightKeys = mixingWeightValue.nodes().map(n => n.getAttribute("data-key")),
-            mwData = mixingWeightKeys.map(
-              k => { return {pointsLists: model[k]}; });
+            mwData = mixingWeightKeys.map(k => model[k]);
 
         if (asynchronous) {
           let finished = new Array(mwData.length).fill(false);
@@ -1101,6 +1097,7 @@ function expressionView(expr, keys) {
             });
         } else {
           mixingWeightValue.data(mwData).call(mixingWeightComponent);
+          onfinished();
         }
       }
     });
