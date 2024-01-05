@@ -1,12 +1,12 @@
 import uuid
 
 import rows2prose.web
-from IPython.display import HTML, display, update_display
+import IPython.display as ipd
 
 
 
 def init_notebook_mode():
-    display(HTML(
+    ipd.display(ipd.HTML(
         rows2prose.web.header_content() + """
     <script>
       if (window.r2pQueue) {{
@@ -17,139 +17,72 @@ def init_notebook_mode():
     """))
 
 
-def js_refresh(element_id, df):
-    return f"""
-    (function() {{
-      function update() {{
-        document.getElementById("{element_id}")._r2pState.refresh({rows2prose.web.df_to_custom_json(df)});
-      }}
-
-      if (window.r2p) {{
-        update();
-      }} else {{
-          if (!window.r2pQueue) {{
-            window.r2pQueue = [];
-          }}
-
-          // Remove stale refreshes. (Avoid queueing a huge unnecessary work task)
-          const k = "{element_id} update";
-          window.r2pQueue = window.r2pQueue.filter(([k2, f]) => k2 != k);
-          window.r2pQueue.push([k, update]);
-      }}
-    }})();
-    </script>
-    """
-
-
-def visualize_snapshot(html_preamble, components, df):
+def display(df, html, script):
     element_id = str(uuid.uuid1())
-    components_str = "\n".join(components)
-
-    s = f"""
-    {html_preamble(element_id)}
-    <script>
-    function initialize() {{
-      let onTableLoadedFunctions = [];
-
-      let table;
-
-      const container = document.getElementById("{element_id}");
-      container._r2pState = {{
-        refresh: function(encodedData) {{
-          table = r2p.parseColumns(encodedData);
-          onTableLoadedFunctions.forEach(onloaded => onloaded(table));
-        }}
-      }};
-
-    {components_str}
-    }}
-
-    if (window.r2p) {{
-      initialize();
-    }} else {{
-        if (!window.r2pQueue) {{
-          window.r2pQueue = [];
-        }}
-
-        window.r2pQueue.push(["", initialize]);
-    }}
-    </script>
-    """
-
-    display(HTML(s))
-
-    # Reuse element ID as display ID, because it's convenient.
-    display(HTML("<script>" + js_refresh(element_id, df) + "</script>"),
-            display_id=element_id)
-    return element_id
-
-
-# To have reusable component code, we want to plug into layered events:
-# - on table available
-# - on selection changed
-
-# Snapshot components only respond to the first one. And they have the option of
-# simply running everything once, except that would mean parsing the expression
-# string on every step.
-
-
-
-def visualize_timeline(html_preamble, components, df):
-    element_id = str(uuid.uuid1())
-    components_str = "\n".join(components)
-
-    s = f"""
-{html_preamble(element_id)}
+    ipd.display(ipd.HTML(f"""
+<div id="{element_id}">{html}</div>
 <script>
-function initialize() {{
-  function extractRows(arr, iRows) {{
-    let selected = arr.slice(0, iRows.length);
-    iRows.forEach((iRow, i) => {{
-      selected[i] = arr[iRow];
-    }});
-    return selected;
+function renderStatic() {{
+  let render = {script.static_js(df)};
+  render(document.getElementById("{element_id}"));
+}}
+
+if (window.r2p) {{
+  renderStatic();
+}} else {{
+    if (!window.r2pQueue) {{
+      window.r2pQueue = [];
+    }}
+
+    window.r2pQueue.push(["", renderStatic]);
+}}
+</script>
+"""))
+
+
+class NotebookUpdater:
+    def __init__(self, container_element_id, get_setdata_js):
+        self.container_element_id = container_element_id
+        self.notebook_display_id = str(uuid.uuid1())
+        self.get_setdata_js = get_setdata_js
+        self.is_set = False
+
+    def set_data(self, df):
+        dsp = (ipd.update_display if self.is_set else ipd.display)
+        dsp(ipd.HTML(f"""
+<script>
+(function() {{
+  function update() {{
+    let render = {self.get_setdata_js(df)};
+    render(document.getElementById("{self.container_element_id}"));
   }}
 
-  let renderRowsFunctions = [],
-      renderTimeFunctions = [],
-      onTableLoadedFunctions = [],
-      table,
-      sortedUniqueTimesteps;
+  if (window.r2p) {{
+    update();
+  }} else {{
+      if (!window.r2pQueue) {{
+        window.r2pQueue = [];
+      }}
 
-  const container = document.getElementById("{element_id}");
-  container._r2pState = {{
-    refresh: function(encodedData) {{
-      const tableBuffer = Uint8Array.from(atob(encodedData), c => c.charCodeAt(0));
+      // Remove stale refreshes. (Avoid queueing a huge unnecessary work task)
+      const k = "{self.container_element_id} update";
+      window.r2pQueue = window.r2pQueue.filter(([k2, f]) => k2 != k);
+      window.r2pQueue.push([k, update]);
+  }}
+}})();
+</script>
+"""), display_id=self.notebook_display_id)
+        self.is_set = True
 
-      table = r2p.tableFromIPC(tableBuffer);
-      sortedUniqueTimesteps = table["i_timestep"]
-        .sort(d3.ascending).filter((d, i, a) => !i || d != a[i - 1]);
 
-      onTableLoadedFunctions.forEach(onloaded => onloaded(table));
-
-      d3.select(container).datum(sortedUniqueTimesteps).call(
-        r2p.hiddenTimeState()
-        .renderTimestep(t => {{
-          const iTimestep = table["i_timestep"];
-
-          let iRows = [];
-          for (let i = 0; i < iTimestep.length; i++) {{
-            if (iTimestep[i] == t) {{
-              iRows.push(i);
-            }}
-          }}
-
-          renderRowsFunctions.forEach(render => render(iRows));
-        }})
-       .renderTime((sortedUniqueTimesteps, index) => {{
-          renderTimeFunctions.forEach(render => render(sortedUniqueTimesteps, index));
-       }}));
-    }}
-  }};
-
-{components_str}
-
-  container._r2pState.refresh({rows2prose.web.df_to_custom_json(df)});
+def display_dynamic(html, script):
+    element_id = str(uuid.uuid1())
+    ipd.display(ipd.HTML(f"""
+<div id="{element_id}">{html}</div>
+<script>
+function initialize() {{
+  let render = {script.dynamic_initialize_js()};
+  render(document.getElementById("{element_id}"));
 }}
 
 if (window.r2p) {{
@@ -162,22 +95,5 @@ if (window.r2p) {{
     window.r2pQueue.push(["", initialize]);
 }}
 </script>
-    """
-
-    display(HTML(s))
-
-    # Reuse element ID as display ID, because it's convenient.
-    display(HTML("<script>" + js_refresh(element_id, df) + "</script>"),
-            display_id=element_id)
-    return element_id
-
-
-def update_timeline(element_id, df):
-    # Reuse element ID as display ID, because it's convenient.
-    update_display(HTML("<script>" + js_refresh(element_id, df) + "</script>"),
-                   display_id=element_id)
-
-
-def update_snapshot(element_id, df):
-    # This is currently identical to update_timeline, but that fact might change.
-    return update_timeline(element_id, df)
+"""))
+    return NotebookUpdater(element_id, script.dynamic_set_data_js).set_data

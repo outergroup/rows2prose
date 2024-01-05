@@ -200,7 +200,7 @@ function scalarDistributionView() {
   function onScaleUpdate() {
     cnv_x = d3.scaleLinear()
         .domain(scale.domain())
-        .range([cnvMult * (1 + scale.range()[0]), cnvMult * (scale.range()[1] + 1)]);
+        .range([cnvMult * scale.range()[0], cnvMult * scale.range()[1]]);
     cnv_y = d3.scaleLinear()
         .domain([0, 1])
         .range([0, cnvMult * height]);
@@ -316,21 +316,22 @@ function scalarDistributionView() {
                 .text(fmaxtext);
             }))
       .call(div => {
-        div.select(".canvasContainer").select("canvas").each(function(points) {
-          const canvas = d3.select(this);
+        div.each(function(points) {
+          const div = d3.select(this),
+                canvas = div.select(".canvasContainer").select("canvas");
           if (this._r2pPrevPoints) {
             const interpolator = d3.interpolateNumberArray(this._r2pPrevPoints, points);
 
             let timer = d3.timer((elapsed) => {
               const t = Math.min(1, d3.easeCubic(elapsed / anim_t));
-              draw(this, div, interpolator(t));
+              draw(canvas.node(), div, interpolator(t));
               if (t === 1) {
                 timer.stop();
               }
             });
 
           } else {
-            draw(this, div, points);
+            draw(canvas.node(), div, points);
           }
 
           this._r2pPrevPoints = points;
@@ -703,7 +704,7 @@ function mixingWeightView() {
 function timeControl() {
   let onupdate;
 
-  const padding = {top: 5, right: 0, left: 8, bottom: 10},
+  const padding = {top: 20, right: 0, left: 8, bottom: 10},
         msPerStep = 200;
 
   function renderValue(selection) {
