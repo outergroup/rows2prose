@@ -1,21 +1,23 @@
 export * from "./src/visual";
 
+const numberArrayClasses = {
+  "float32": Float32Array,
+  "float64": Float64Array,
+  "uint32": Uint32Array,
+  "int32": Int32Array,
+  "uint64": BigUint64Array,
+  "int64": BigInt64Array
+};
+
 function parseColumns(d) {
   let parsed = {};
   Object.keys(d).forEach(k => {
-    let type = d[k].type,
-        data = d[k].data;
-    if (type == "float32") {
-      parsed[k] = new Float32Array(Uint8Array.from(atob(data), c => c.charCodeAt(0)).buffer);
-    } else if (type == "float64") {
-      parsed[k] = new Float64Array(Uint8Array.from(atob(data), c => c.charCodeAt(0)).buffer);
-    } else if (type == "uint32") {
-      parsed[k] = new Uint32Array(Uint8Array.from(atob(data), c => c.charCodeAt(0)).buffer);
-    } else if (type == "int32") {
-      parsed[k] = new Int32Array(Uint8Array.from(atob(data), c => c.charCodeAt(0)).buffer);
-    } else {
+    const type = d[k].type,
+          buffer = Uint8Array.from(atob(d[k].data), c => c.charCodeAt(0)).buffer;
+    if (!(type in numberArrayClasses)) {
       throw new Error(`Unknown data type: ${type}`);
     }
+    parsed[k] = new numberArrayClasses[type](buffer);
   });
   return parsed;
 }

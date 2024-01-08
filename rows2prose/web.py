@@ -15,13 +15,22 @@ def df_to_dict(df):
              ...}
     using the column's type to determine "type".
     """
+    df2 = df.copy()
+    # convert any int64 to int32, since javascript BigInts cause problems in
+    # code that expects javascript Numbers
+    for col in df2.columns:
+        if df2[col].dtype == np.int64:
+            df2[col] = df2[col].astype(np.int32)
+        elif df2[col].dtype == np.uint64:
+            df2[col] = df2[col].astype(np.uint32)
+
     return {
         col: {
-            "type": str(df[col].dtype),
+            "type": str(df2[col].dtype),
             "data": base64.b64encode(
-                np.ascontiguousarray(df[col].values)).decode("utf-8")
+                np.ascontiguousarray(df2[col].values)).decode("utf-8")
         }
-        for col in df.columns
+        for col in df2.columns
     }
 
 
@@ -781,7 +790,8 @@ def full_html(body):
 
 def static(df, html, script):
     element_id = str(uuid.uuid1())
-    return html + f"""
+    return f"""
+<div id="{element_id}">{html}</div>
 <script>
 (function() {{
   let render = {script.static_js(df)};

@@ -1,6 +1,11 @@
 import uuid
 
 import rows2prose.web
+from rows2prose.web import (Snapshot,
+                            Timeline,
+                            DistributionSnapshot,
+                            DistributionTimeline,
+                            DistributionListSnapshot)
 import IPython.display as ipd
 
 

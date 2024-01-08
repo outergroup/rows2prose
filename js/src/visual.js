@@ -118,7 +118,7 @@ function scalarView() {
             .attr("width", scale(d) + padRight)
 
           svg.select("title")
-            .text(d => d.toPrecision(5));
+            .text(d => toPrecisionThrifty(d, 5));
 
           svg.select('rect')
             .transition()
@@ -128,7 +128,7 @@ function scalarView() {
             .attr('width', rectWidth);
 
           svg.select('text')
-            .text(exponentFormat ? d.toExponential(1) : d.toPrecision(2))
+            .text(exponentFormat ? d.toExponential(1) : toPrecisionThrifty(d, 2))
             .attr('text-anchor', d < 0 ? 'end' : 'start')
             .transition()
             .duration(anim_t)
@@ -382,6 +382,11 @@ function scalarDistributionView() {
 }
 
 function toPrecisionThrifty(d, precision) {
+  // If greater than 1, don't use scientific notation.
+  if (d >= 1.0 && (Math.log10(d) + 1) >= precision) {
+    return Math.round(d).toFixed(0);
+  }
+
   const fullPrecision = d.toPrecision(precision),
         parsedPrecise = parseFloat(fullPrecision);
 
