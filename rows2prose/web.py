@@ -67,11 +67,12 @@ div.r2p-output svg {{
 
 
 
-def _time_control(class_name):
+def _time_control(class_name, prefix="Step"):
     return f"""
 (function() {{
   const element = container.querySelectorAll(".{class_name}")[0],
         component = r2p.timeControl()
+        .prefix("{prefix}")
         .onupdate(iTimestep => {{
           d3.select(container).select(".timeState").node()._r2pState.selectTimestep(
             iTimestep
@@ -147,8 +148,8 @@ function(container) {{
   const element = container.querySelectorAll(".{class_name}")[0];
 
   onTableLoadedFunctions.push(() => {{
-    d3.select(element)
-      .datum(table["{key}"][0])
+    element
+      .data(keys.map(k => table[k][0]))
       .call(r2p.positionView()
         .scale(d3.scaleLinear().domain([-1, 1]).range([0, 232])));
   }});
@@ -298,8 +299,8 @@ function(container) {{
 """
 
     @classmethod
-    def time_control(cls, class_name):
-        return _time_control(class_name)
+    def time_control(cls, class_name, prefix="Step"):
+        return _time_control(class_name, prefix)
 
     @classmethod
     def position_view(cls, class_name, key):
@@ -490,7 +491,7 @@ function(container) {{
 """
 
     @classmethod
-    def scalar_view(cls, class_name, log_scale=False):
+    def scalar_view(cls, class_name, height=35, point_radius=2, log_scale=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
@@ -512,8 +513,9 @@ function(container) {{
         .useDataMin(true)
         .useDataMax(true)
         {".exponentFormat(true)" if log_scale else ""}
-        .height(12)
-        .fontSize(13));
+        .pointRadius({point_radius})
+        .height({height})
+        .fontSize("13px"));
   }});
 }})();
 """
@@ -681,8 +683,8 @@ function(container) {{
 """
 
     @classmethod
-    def time_control(cls, class_name):
-        return _time_control(class_name)
+    def time_control(cls, class_name, prefix="Step"):
+        return _time_control(class_name, prefix)
 
     @classmethod
     def position_view(cls, class_name):
@@ -707,8 +709,8 @@ function(container) {{
   }});
 
   renderRowsFunctions.push(function (iRows) {{
-    d3.select(element)
-      .datum(extractRows(table["{key}"], iRows))
+    element
+      .data(keys.map(k => extractRows(table[k], iRows)))
       .call(component);
   }});
 }})();
@@ -775,7 +777,6 @@ def full_html(body):
 {body}
 </body>
 </html>"""
-
 
 
 def static(df, html, script):

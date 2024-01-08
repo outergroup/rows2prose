@@ -398,9 +398,8 @@ function toPrecisionThrifty(d, precision) {
 function scalarDistributionListView() {
   let scale = d3.scaleLinear(),
       exponentFormat = false,
-      height = 30,
       fontSize = "13px",
-      rowHeight = 2,
+      height = 13,
       pointRadius = 1,
       useDataMin = false,
       useDataMax = false,
@@ -416,7 +415,6 @@ function scalarDistributionListView() {
           fxmax = d => scale(fmax(d)),
           fxmin = d => scale(fmin(d)),
           fwidth = d => fxmax(d) - fxmin(d),
-          fheight = d => d.nConfigs * rowHeight,
           fmintext = d => exponentFormat
           ? fmin(d).toExponential(1)
           : toPrecisionThrifty(fmin(d), 2),
@@ -442,7 +440,7 @@ function scalarDistributionListView() {
                 .style("font-size", fontSize)
                 .style("color", "gray")
                 .style("position", "relative")
-                .style("top", d => `-${d.nConfigs * rowHeight / 2 - 5}px`)
+                .style("top", d => `-${height / 2 - 5}px`)
                 .text(fmintext);
 
               div.append("canvas")
@@ -454,12 +452,12 @@ function scalarDistributionListView() {
                 .style("font-size", fontSize)
                 .style("color", "gray")
                 .style("position", "relative")
-                .style("top", d => `-${d.nConfigs * rowHeight / 2 - 5}px`)
+                .style("top", d => `-${height / 2 - 5}px`)
                 .style("left", "8px")
                 .text(fmaxtext);
             }))
       .call(div => {
-        div.style("height", d => `${fheight(d)}px`);
+        div.style("height", `${height}px`);
 
         if (useDataMin) {
           div.select(".min-text")
@@ -473,9 +471,9 @@ function scalarDistributionListView() {
 
         let canvas = div.select("canvas")
           .attr("width", d => cnvMult * (fwidth(d) + 2))
-          .attr("height", d => cnvMult * fheight(d))
+          .attr("height", cnvMult * height)
           .style("width", d => `${fwidth(d) + 2}px`)
-          .style("height", d => `${fheight(d)}px`);
+          .style("height", `${height}px`);
 
         canvas.each(function(d) {
           let ctx = this.getContext("2d");
@@ -484,24 +482,24 @@ function scalarDistributionListView() {
                 .domain(scale.domain())
                 .range([cnvMult * (1 + scale.range()[0]), cnvMult * (scale.range()[1] + 1)]),
                 cnv_y = d3.scaleLinear()
-                .domain([0, d.nConfigs - 1])
-                .range([cnvMult * 0.5, cnvMult * rowHeight * (d.nConfigs + 0.5)]);
+                .domain([0, d.nConfigs])
+                .range([0, cnvMult * height]);
 
           // draw silver rect
           ctx.fillStyle = "silver";
-          ctx.fillRect(0, 0, cnvMult * fwidth(d), cnvMult * fheight(d));
+          ctx.fillRect(0, 0, cnvMult * fwidth(d), cnvMult * height);
 
           ctx.strokeStyle = "gray";
           ctx.lineWidth = 2 * cnvMult;
 
           ctx.beginPath();
           ctx.moveTo(cnv_x(fmin(d)), cnv_y(0));
-          ctx.lineTo(cnv_x(fmin(d)), cnv_y(d.nConfigs - 1));
+          ctx.lineTo(cnv_x(fmin(d)), cnv_y(d.nConfigs));
           ctx.stroke();
 
           ctx.beginPath();
           ctx.moveTo(cnv_x(fmax(d)), cnv_y(0));
-          ctx.lineTo(cnv_x(fmax(d)), cnv_y(d.nConfigs - 1));
+          ctx.lineTo(cnv_x(fmax(d)), cnv_y(d.nConfigs));
           ctx.stroke();
 
           ctx.fillStyle = "blue";
@@ -509,7 +507,7 @@ function scalarDistributionListView() {
 
           for (let i = 0; i < d.values.length; i++) {
             ctx.beginPath();
-            ctx.arc(cnv_x(d.values[i]), cnv_y(d.iConfigs[i]),
+            ctx.arc(cnv_x(d.values[i]), cnv_y(d.iConfigs[i] + 0.5),
                     pointRadius*cnvMult, 0, 2 * Math.PI);
             ctx.fill();
           }
@@ -544,6 +542,12 @@ function scalarDistributionListView() {
   render.height = function(value) {
     if (!arguments.length) return height;
     height = value;
+    return render;
+  };
+
+  render.pointRadius = function(value) {
+    if (!arguments.length) return pointRadius;
+    pointRadius = value;
     return render;
   };
 
@@ -702,7 +706,8 @@ function mixingWeightView() {
 }
 
 function timeControl() {
-  let onupdate;
+  let onupdate,
+      prefix = "Step";
 
   const padding = {top: 20, right: 0, left: 8, bottom: 10},
         msPerStep = 200;
@@ -725,7 +730,7 @@ function timeControl() {
       })
       .text(d => {
         const stepLabel = d.sortedUniqueTimesteps[Math.floor(d.index)];
-        return `Step ${stepLabel}`;
+        return `${prefix} ${stepLabel}`;
       });
   }
 
@@ -925,6 +930,12 @@ function timeControl() {
   render.onupdate = function(_) {
     if (!arguments.length) return onupdate;
     onupdate = _;
+    return render;
+  };
+
+  render.prefix = function(_) {
+    if (!arguments.length) return prefix;
+    prefix = _;
     return render;
   };
 
