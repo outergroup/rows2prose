@@ -151,10 +151,11 @@ function(container) {{
 """
 
     @classmethod
-    def position_view(cls, class_name, key):
+    def position_view(cls, class_name):
         return f"""
 (function() {{
-  const element = container.querySelectorAll(".{class_name}")[0];
+  const element = d3.select(container).selectAll(".{class_name}"),
+        keys = element.nodes().map(e => e.getAttribute("data-key"));
 
   onTableLoadedFunctions.push(() => {{
     element
@@ -312,10 +313,11 @@ function(container) {{
         return _time_control(class_name, prefix)
 
     @classmethod
-    def position_view(cls, class_name, key):
+    def position_view(cls, class_name):
         return f"""
 (function() {{
-  const element = container.querySelectorAll(".{class_name}")[0];
+  const element = d3.select(container).selectAll(".{class_name}"),
+        keys = element.nodes().map(e => e.getAttribute("data-key"));
 
   let component;
   onTableLoadedFunctions.push(() => {{
@@ -462,7 +464,7 @@ function(container) {{
 """
 
     @classmethod
-    def expression_view(class_name, keys, text):
+    def expression_view(cls, class_name, keys, text):
         raise NotImplementedError()
 
 
@@ -500,7 +502,7 @@ function(container) {{
 """
 
     @classmethod
-    def scalar_view(cls, class_name, height=35, point_radius=2, log_scale=False):
+    def scalar_view(cls, class_name, width=215, height=35, point_radius=2, log_scale=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
@@ -518,7 +520,7 @@ function(container) {{
     element
       .data(keys.map(k => {{ return {{ values: table[k], iConfigs: iConfig, nConfigs, min, max }}; }}))
       .call(r2p.scalarDistributionListView()
-        .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, 215]))
+        .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, {width}]))
         .useDataMin(true)
         .useDataMax(true)
         {".exponentFormat(true)" if log_scale else ""}
@@ -530,7 +532,7 @@ function(container) {{
 """
 
     @classmethod
-    def expression_view(class_name, keys, text):
+    def expression_view(cls, class_name, keys, text):
         return f"""
 (function() {{
   const element = container.querySelectorAll(".{class_name}")[0],
@@ -551,34 +553,6 @@ function(container) {{
       .call(component);
   }});
  }})();
-"""
-
-    @classmethod
-    def position_view(cls, class_name):
-        return f"""
-(function() {{
-  const element = d3.select(container).selectAll(".{class_name}"),
-        keys = element.nodes().map(e => e.getAttribute("data-key"));
-
-  onTableLoadedFunctions.push(() => {{
-    const globalMin = d3.min(keys, k => d3.min(table[k])),
-          globalMax = d3.max(keys, k => d3.max(table[k])),
-          min = globalMin,
-          // Need a valid scale, so these need to be different.
-          max = (globalMin != globalMax)
-          ? globalMax
-          : {"globalMax * 10" if log_scale else "globalMax + 1"};  // Visualize each point as a low value.
-
-    d3.select(element)
-      .data(keys.map(k => {{ return {{ values: table[k], iConfigs: iConfig, nConfigs, min, max }}; }}))
-      .call(r2p.scalarDistributionListView()
-            .scale(d3.scaleLinear().domain([min, max]).range([0, 232]))
-            .useDataMin(true)
-            .useDataMax(true)
-            .height(12)
-            .fontSize(13));
-  }});
-}})();
 """
 
 
@@ -696,37 +670,7 @@ function(container) {{
         return _time_control(class_name, prefix)
 
     @classmethod
-    def position_view(cls, class_name):
-        return f"""
-(function() {{
-  const elements = container.querySelectorAll(".{class_name}"),
-        keys = elements.map(e => e.getAttribute("data-key"));
-
-  let component;
-  onTableLoadedFunctions.push(() => {{
-    const [globalMin, globalMax] = d3.extent(keys, k => d3.extent(table[k])),
-          min = globalMin,
-          // Need a valid scale, so these need to be different.
-          max = (globalMin != globalMax)
-          ? globalMax
-          : globalMax + 1;  // Visualize each point as a low value.
-
-    component = r2p.scalarDistributionView()
-      .scale(d3.scaleLinear().domain([min, max]).range([0, 232]))
-      .height(12)
-      .fontSize(13);
-  }});
-
-  renderRowsFunctions.push(function (iRows) {{
-    element
-      .data(keys.map(k => extractRows(table[k], iRows)))
-      .call(component);
-  }});
-}})();
-"""
-
-    @classmethod
-    def scalar_view(cls, class_name, log_scale=False):
+    def scalar_view(cls, class_name, width=215, log_scale=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
@@ -742,7 +686,7 @@ function(container) {{
           ? globalMax
           : {"globalMax * 10" if log_scale else "globalMax + 1"};  // Visualize each point as a low value.
     component = r2p.scalarDistributionView()
-      .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, 215]))
+      .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, {width}]))
       {".exponentFormat(true)" if log_scale else ""}
       .height(12)
       .fontSize(13);

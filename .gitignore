@@ -5,3 +5,5 @@ dist
 node_modules
 js/build
 rows2prose/package_data
+build
+*.ipynb_checkpoints
