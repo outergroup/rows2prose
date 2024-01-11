@@ -421,7 +421,7 @@ function(container) {{
     @classmethod
     def scalar_view(cls, class_name, log_scale=False,
                     min_override=None, max_override=None,
-                    use_data_min=False, use_data_max=True):
+                    use_data_min=False, use_data_max=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
@@ -634,7 +634,7 @@ function(container) {{
     @classmethod
     def scalar_view(cls, class_name, width=215, log_scale=False,
                     min_override=None, max_override=None,
-                    use_data_min=False, use_data_max=True):
+                    use_data_min=False, use_data_max=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
