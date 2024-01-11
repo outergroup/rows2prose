@@ -167,24 +167,6 @@ function(container) {{
 """
 
     @classmethod
-    def expression_view(cls, class_name, keys, text):
-        return f"""
-(function() {{
-  const kernelExpr = `{text}`,
-        kernelKeys = {repr(keys)},
-        element = container.querySelectorAll(".{class_name}")[0],
-        component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalar");
-
-  onTableLoadedFunctions.push(() => {{
-    const model = Object.fromEntries(
-      kernelKeys.map(k => [k, table[k][0]])
-    );
-    d3.select(element).datum(model).call(component);
-  }});
-}})();
-"""
-
-    @classmethod
     def positive_scalar_view(cls, class_name, log_scale=False):
         return f"""
 (function() {{
@@ -437,14 +419,16 @@ function(container) {{
 """
 
     @classmethod
-    def scalar_view(cls, class_name, log_scale=False):
+    def scalar_view(cls, class_name, log_scale=False,
+                    min_override=None, max_override=None,
+                    use_data_min=False, use_data_max=True):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
         keys = element.nodes().map(e => e.getAttribute("data-key"));
   onTableLoadedFunctions.push(() => {{
-    const globalMin = d3.min(keys, k => d3.min(table[k])),
-          globalMax = d3.max(keys, k => d3.max(table[k])),
+    const globalMin = {min_override if min_override is not None else "d3.min(keys, k => d3.min(table[k]))"},
+          globalMax = {max_override if max_override is not None else "d3.max(keys, k => d3.max(table[k]))"},
           min = globalMin,
           // Need a valid scale, so these need to be different.
           max = (globalMin != globalMax)
@@ -456,16 +440,13 @@ function(container) {{
       .call(r2p.scalarDistributionView()
         .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, 215]))
         {".exponentFormat(true)" if log_scale else ""}
-        .useDataMax(true)
+        {".useDataMin(true)" if use_data_min else ""}
+        {".useDataMax(true)" if use_data_max else ""}
         .height(12)
         .fontSize(13));
   }});
 }})();
 """
-
-    @classmethod
-    def expression_view(cls, class_name, keys, text):
-        raise NotImplementedError()
 
 
 class DistributionListSnapshot(ScriptBuilder):
@@ -502,15 +483,16 @@ function(container) {{
 """
 
     @classmethod
-    def scalar_view(cls, class_name, width=215, height=35, point_radius=2, log_scale=False):
+    def scalar_view(cls, class_name, width=215, height=35, point_radius=2, log_scale=False,
+                    min_override=None, max_override=None, use_data_min=False, use_data_max=False):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
         keys = element.nodes().map(e => e.getAttribute("data-key"));
 
   onTableLoadedFunctions.push(() => {{
-    const globalMin = d3.min(keys, k => d3.min(table[k])),
-          globalMax = d3.max(keys, k => d3.max(table[k])),
+    const globalMin = {min_override if min_override is not None else "d3.min(keys, k => d3.min(table[k]))"},
+          globalMax = {max_override if max_override is not None else "d3.max(keys, k => d3.max(table[k]))"},
           min = globalMin,
           // Need a valid scale, so these need to be different.
           max = (globalMin != globalMax)
@@ -518,41 +500,21 @@ function(container) {{
           : {"globalMax * 10" if log_scale else "globalMax + 1"};  // Visualize each point as a low value.
 
     element
-      .data(keys.map(k => {{ return {{ values: table[k], iConfigs: iConfig, nConfigs, min, max }}; }}))
+      .data(keys.map(k => {{
+        const values = table[k],
+              [min, max] = d3.extent(values);
+        return {{ values: values, iConfigs: iConfig, nConfigs, min, max }};
+      }}))
       .call(r2p.scalarDistributionListView()
         .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, {width}]))
-        .useDataMin(true)
-        .useDataMax(true)
         {".exponentFormat(true)" if log_scale else ""}
+        {".useDataMin(true)" if use_data_min else ""}
+        {".useDataMax(true)" if use_data_max else ""}
         .pointRadius({point_radius})
         .height({height})
         .fontSize("13px"));
   }});
 }})();
-"""
-
-    @classmethod
-    def expression_view(cls, class_name, keys, text):
-        return f"""
-(function() {{
-  const element = container.querySelectorAll(".{class_name}")[0],
-        kernelExpr = `{text}`,
-        kernelKeys = {repr(keys)},
-        component = r2p.expressionView(kernelExpr, kernelKeys)
-          .valueType("scalarDistributionList")
-
-  onTableLoadedFunctions.push(() => {{
-    d3.select(element)
-      .datum(Object.fromEntries(
-        kernelKeys.map(k => {{
-          const param = table[k],
-                [min, max] = d3.extent(param);
-          return [k, {{values: param, iConfigs: iConfig, nConfigs, min, max}}];
-        }})
-      ))
-      .call(component);
-  }});
- }})();
 """
 
 
@@ -670,7 +632,9 @@ function(container) {{
         return _time_control(class_name, prefix)
 
     @classmethod
-    def scalar_view(cls, class_name, width=215, log_scale=False):
+    def scalar_view(cls, class_name, width=215, log_scale=False,
+                    min_override=None, max_override=None,
+                    use_data_min=False, use_data_max=True):
         return f"""
 (function() {{
   const element = d3.select(container).selectAll(".{class_name}"),
@@ -678,8 +642,8 @@ function(container) {{
 
   let component;
   onTableLoadedFunctions.push(() => {{
-    const globalMin = d3.min(keys, k => d3.min(table[k])),
-          globalMax = d3.max(keys, k => d3.max(table[k])),
+    const globalMin = {min_override if min_override is not None else "d3.min(keys, k => d3.min(table[k]))"},
+          globalMax = {max_override if max_override is not None else "d3.max(keys, k => d3.max(table[k]))"},
           min = globalMin,
           // Need a valid scale, so these need to be different.
           max = (globalMin != globalMax)
@@ -688,6 +652,8 @@ function(container) {{
     component = r2p.scalarDistributionView()
       .scale(d3.{"scaleLog()" if log_scale else "scaleLinear()"}.domain([min, max]).range([0, {width}]))
       {".exponentFormat(true)" if log_scale else ""}
+      {".useDataMin(true)" if use_data_min else ""}
+      {".useDataMax(true)" if use_data_max else ""}
       .height(12)
       .fontSize(13);
   }});
@@ -696,25 +662,6 @@ function(container) {{
     element
       .data(keys.map(k => extractRows(table[k], iRows)))
       .call(component);
-  }});
-}})();
-"""
-
-    @classmethod
-    def expression_view(cls, class_name, keys, text):
-        return f"""
-(function() {{
-  const kernelExpr = `{text}`,
-        kernelKeys = {repr(keys)},
-        element = container.querySelectorAll(".{class_name}")[0],
-        component = r2p.expressionView(kernelExpr, kernelKeys).valueType("scalarDistribution");
-
-  renderRowsFunctions.push(function (iRows) {{
-    const model = Object.fromEntries(
-      kernelKeys.map(k => [k, extractRows(table[k], iRows)])
-    );
-
-    d3.select(element).datum(model).call(component);
   }});
 }})();
 """
