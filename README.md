@@ -1,6 +1,6 @@
 # rows2prose
 
-Display visual blocks of text with data rendered inline.
+Display visual blocks of text with data rendered inline. See [examples](https://rows2prose.org).
 
 Many visualizations can be built as follows:
 
